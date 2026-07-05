@@ -7,6 +7,13 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const userMsg = buildUserPrompt(body)
 
+    const payload = {
+      model: 'claude-sonnet-4-5',
+      max_tokens: 2000,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userMsg }],
+    }
+
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -14,33 +21,27 @@ export async function POST(req: NextRequest) {
         'x-api-key': process.env.ANTHROPIC_API_KEY!,
         'anthropic-version': '2023-06-01',
       },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 2000,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: userMsg }],
-      }),
+      body: JSON.stringify(payload),
     })
 
+    const data = await res.json()
+
     if (!res.ok) {
-      const err = await res.text()
-      console.error('Anthropic API error:', res.status, err)
-      return NextResponse.json({ error: `Anthropic API hatası: ${res.status}` }, { status: 500 })
+      console.error('Anthropic error:', res.status, JSON.stringify(data))
+      return NextResponse.json({ error: `Anthropic API hatası: ${res.status} - ${data?.error?.message || ''}` }, { status: 500 })
     }
 
-    const data = await res.json()
     const text = data.content?.map((b: { text?: string }) => b.text || '').join('') || ''
     const clean = text.replace(/```json|```/g, '').trim()
-    
+
     let plan
     try {
       plan = JSON.parse(clean)
     } catch {
-      console.error('JSON parse error, raw text:', text.slice(0, 500))
+      console.error('JSON parse error:', text.slice(0, 500))
       return NextResponse.json({ error: 'Plan parse hatası' }, { status: 500 })
     }
 
-    // Save to Supabase (optional)
     try {
       await supabase.from('media_plans').insert({
         brand: body.brand,
