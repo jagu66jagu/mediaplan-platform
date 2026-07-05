@@ -5,13 +5,13 @@ import PlanResult from './PlanResult'
 
 const MONTHS = ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık']
 
-const OBJECTIVES: Record<string, string[]> = {
-  ecommerce: ['Full Funnel (Awareness→Conversion)', 'Conversion / Satış', 'Consideration / Traffic', 'App Install'],
-  finance: ['Lead Generation', 'App Install', 'Awareness', 'Full Funnel'],
-  fmcg: ['Awareness', 'Consideration', 'Full Funnel', 'Conversion'],
-  travel: ['Conversion / Satış', 'Consideration / Traffic', 'Awareness', 'Full Funnel'],
-  b2b: ['Lead Generation', 'Awareness / Thought Leadership', 'Consideration / Traffic'],
-  app: ['App Install', 'App Re-engagement', 'Awareness', 'Full Funnel'],
+const ALL_OBJECTIVES: Record<string, string[]> = {
+  ecommerce: ['Awareness', 'Consideration / Traffic', 'Conversion / Satış', 'App Install', 'Full Funnel'],
+  finance: ['Awareness', 'Lead Generation', 'App Install', 'Full Funnel'],
+  fmcg: ['Awareness', 'Consideration', 'Conversion', 'Full Funnel'],
+  travel: ['Awareness', 'Consideration / Traffic', 'Conversion / Satış', 'Full Funnel'],
+  b2b: ['Awareness / Thought Leadership', 'Lead Generation', 'Consideration / Traffic'],
+  app: ['Awareness', 'App Install', 'App Re-engagement', 'Full Funnel'],
 }
 
 const S = {
@@ -21,23 +21,52 @@ const S = {
   grid3: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 } as React.CSSProperties,
   card: { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 20, marginBottom: 12 } as React.CSSProperties,
   sectionLabel: { fontSize: 10, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '.08em', color: 'var(--text-3)', marginBottom: 14 },
-  field: { marginBottom: 14 },
+  field: { marginBottom: 14 } as React.CSSProperties,
+}
+
+function MultiSelect({ options, selected, onChange }: {
+  options: string[], selected: string[], onChange: (v: string[]) => void
+}) {
+  const toggle = (o: string) => {
+    if (selected.includes(o)) onChange(selected.filter(x => x !== o))
+    else onChange([...selected, o])
+  }
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+      {options.map(o => {
+        const active = selected.includes(o)
+        return (
+          <button key={o} type="button" onClick={() => toggle(o)} style={{
+            fontSize: 12, padding: '6px 12px', borderRadius: 99, cursor: 'pointer',
+            border: active ? '1px solid var(--accent)' : '1px solid var(--border-strong)',
+            background: active ? 'var(--accent-soft)' : 'var(--surface-2)',
+            color: active ? 'var(--accent)' : 'var(--text-2)',
+            fontWeight: active ? 600 : 400, transition: 'all .15s',
+          }}>
+            {active ? '✓ ' : ''}{o}
+          </button>
+        )
+      })}
+    </div>
+  )
 }
 
 export default function MediaPlanForm({ sector, sectorLabel }: { sector: string, sectorLabel: string }) {
   const [form, setForm] = useState({
-    brand: '', objective: '', budget: '', month: 'Kasım', duration: '1 Ay',
+    brand: '', budget: '', month: 'Kasım', duration: '1 Ay',
     audience: '', brief: '', prevBudget: '', prevRoas: '', targetRoas: ''
   })
+  const [objectives, setObjectives] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [plan, setPlan] = useState<MediaPlan | null>(null)
   const [error, setError] = useState('')
 
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
+  const opts = ALL_OBJECTIVES[sector] || ALL_OBJECTIVES.ecommerce
 
   async function generate() {
-    if (!form.brand || !form.objective || !form.budget) {
-      setError('Marka, amaç ve bütçe zorunlu.')
+    if (!form.brand || objectives.length === 0 || !form.budget) {
+      setError('Marka, en az 1 kampanya amacı ve bütçe zorunlu.')
       return
     }
     setError('')
@@ -48,41 +77,42 @@ export default function MediaPlanForm({ sector, sectorLabel }: { sector: string,
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          brand: form.brand, sector: sectorLabel, objective: form.objective,
-          budget: Number(form.budget), month: form.month, duration: form.duration,
-          audience: form.audience, brief: form.brief,
+          brand: form.brand,
+          sector: sectorLabel,
+          objective: objectives.join(' + '),
+          budget: Number(form.budget),
+          month: form.month,
+          duration: form.duration,
+          audience: form.audience,
+          brief: form.brief,
           prevBudget: form.prevBudget ? Number(form.prevBudget) : undefined,
           prevRoas: form.prevRoas ? Number(form.prevRoas) : undefined,
           targetRoas: form.targetRoas ? Number(form.targetRoas) : undefined,
         })
       })
       const data = await res.json()
-      setPlan({ ...data, brand: form.brand, sector: sectorLabel, objective: form.objective, budget: Number(form.budget), month: form.month, duration: form.duration, audience: form.audience, brief: form.brief })
-    } catch {
-      setError('Bir hata oluştu. Tekrar dene.')
+      if (data.error) throw new Error(data.error)
+      setPlan({ ...data, brand: form.brand, sector: sectorLabel, objective: objectives.join(' + '), budget: Number(form.budget), month: form.month, duration: form.duration, audience: form.audience, brief: form.brief })
+    } catch (e) {
+      setError(`Hata: ${e instanceof Error ? e.message : 'Bilinmeyen hata'}`)
     }
     setLoading(false)
   }
-
-  const objs = OBJECTIVES[sector] || OBJECTIVES.ecommerce
 
   return (
     <div>
       <div style={S.card}>
         <div style={S.sectionLabel}>Kampanya Bilgisi</div>
-        <div style={{ ...S.grid2, marginBottom: 14 }}>
-          <div style={S.field}>
-            <label style={S.label}>Marka Adı *</label>
-            <input style={S.input} value={form.brand} onChange={e => set('brand', e.target.value)} placeholder="ör. Garanti BBVA, English Home..." />
-          </div>
-          <div style={S.field}>
-            <label style={S.label}>Kampanya Amacı *</label>
-            <select style={S.input} value={form.objective} onChange={e => set('objective', e.target.value)}>
-              <option value="">Seç...</option>
-              {objs.map(o => <option key={o} value={o}>{o}</option>)}
-            </select>
-          </div>
+        <div style={{ ...S.field }}>
+          <label style={S.label}>Marka Adı *</label>
+          <input style={S.input} value={form.brand} onChange={e => set('brand', e.target.value)} placeholder="ör. Garanti BBVA, English Home..." />
         </div>
+
+        <div style={S.field}>
+          <label style={{ ...S.label, marginBottom: 10 }}>Kampanya Amacı * <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>(birden fazla seçilebilir)</span></label>
+          <MultiSelect options={opts} selected={objectives} onChange={setObjectives} />
+        </div>
+
         <div style={{ ...S.grid3, marginBottom: 14 }}>
           <div>
             <label style={S.label}>Toplam Bütçe (₺) *</label>
@@ -101,6 +131,7 @@ export default function MediaPlanForm({ sector, sectorLabel }: { sector: string,
             </select>
           </div>
         </div>
+
         <div style={S.field}>
           <label style={S.label}>Hedef Kitle</label>
           <input style={S.input} value={form.audience} onChange={e => set('audience', e.target.value)} placeholder="ör. 25-45 yaş, kadın, İstanbul, online alışveriş yapan" />
@@ -129,18 +160,14 @@ export default function MediaPlanForm({ sector, sectorLabel }: { sector: string,
         </div>
       </div>
 
-      {error && <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>{error}</div>}
+      {error && <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12, padding: '10px 14px', background: 'rgba(248,113,113,.08)', borderRadius: 8, border: '1px solid rgba(248,113,113,.2)' }}>{error}</div>}
 
-      <button
-        onClick={generate}
-        disabled={loading}
-        style={{
-          width: '100%', padding: '12px 20px', borderRadius: 10, border: 'none',
-          background: loading ? 'var(--surface-3)' : 'var(--accent)',
-          color: 'white', fontSize: 14, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer',
-          transition: 'opacity .15s', opacity: loading ? .7 : 1
-        }}
-      >
+      <button onClick={generate} disabled={loading} style={{
+        width: '100%', padding: '12px 20px', borderRadius: 10, border: 'none',
+        background: loading ? 'var(--surface-3)' : 'var(--accent)',
+        color: 'white', fontSize: 14, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer',
+        opacity: loading ? .7 : 1
+      }}>
         {loading ? '⏳ Medya planı oluşturuluyor...' : 'Medya Planı Oluştur →'}
       </button>
 
